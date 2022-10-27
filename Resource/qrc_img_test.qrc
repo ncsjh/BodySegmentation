@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="start_resource">
+    <file>qrc_img_test.qrc</file>
+  </qresource>
+</RCC>
