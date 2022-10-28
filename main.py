@@ -78,12 +78,14 @@ class StartClass(QMainWindow,startFormClass):
     def mainReturnButtonMove(self):
         widget.setCurrentIndex(widget.currentIndex()-1)
 
-    @pyqtSlot(QImage, bool)
-    def setImage(self, image, isFinished):
+    @pyqtSlot(QImage, QImage, bool)
+    def setImage(self, image,image2, isFinished):
         pixmap = QPixmap.fromImage(image)
         self.labelSideViewVideo.setPixmap(pixmap)
         self.labelSideViewVideo.repaint()
-
+        pixmap2 = QPixmap.fromImage(image2)
+        self.labelFrontViewVideo.setPixmap(pixmap2)
+        self.labelFrontViewVideo.repaint()
         if isFinished:
             expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
             self.tedkVp.setText(str(expose['kvp']))
@@ -96,15 +98,17 @@ class StartClass(QMainWindow,startFormClass):
             self.tedmAs.setAlignment(Qt.AlignCenter)
 
 class runThread(QThread):
-    changePixmap = pyqtSignal(QImage,bool)
+    changePixmap = pyqtSignal(QImage, QImage,bool)
 
     def Run(self):
         isFinished=False
         #print("영상 촬영 시작")
         cap = cv2.VideoCapture(0)
+        cap2 = cv2.VideoCapture(1)
         start=time.time()
         while(True):
             ret,frame = cap.read()
+            ret2,frame2=cap2.read()
             if time.time() - start<3:
                 isFinished=False
             if ret:
@@ -113,14 +117,17 @@ class runThread(QThread):
                 we = int(w * 2 / 3)
 
                 rgbImage = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
-                # h, w, ch = rgbImage.shape
+                rgbImage2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2RGB)
+                h, w, ch = rgbImage.shape
 
-                # rgbImage=rgbImage[ws:we, :]
-                # bytesPerLine = int(ch * ws)
-                # convertToQtFormat = QImage(rgbImage.data, ws, h, bytesPerLine, QImage.Format_RGB888)
+                rgbImage=rgbImage[:,ws:we,:]
+                rgbImage2=rgbImage2[:,ws:we,:]
+                bytesPerLine = int(ch * w)
+                convertToQtFormat = QImage(rgbImage[0], ws,h, bytesPerLine, QImage.Format_RGB888)
+                convertToQtFormat2 = QImage(rgbImage2[0], ws,h, bytesPerLine, QImage.Format_RGB888)
 
-                bytesPerLine=ch*w
-                convertToQtFormat=QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                # bytesPerLine=ch*w
+                # convertToQtFormat=QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
 
                 #p = convertToQtFormat.scaled(w, h, Qt.IgnoreAspectRatio)
                 # 영상 보내기
@@ -134,7 +141,7 @@ class runThread(QThread):
 
                 #결과 값 전달.
                 #영상  , 관전압 결과 , 간전류 결과
-                self.changePixmap.emit(convertToQtFormat, isFinished)
+                self.changePixmap.emit(convertToQtFormat,convertToQtFormat2, isFinished)
                 # 임의 결과값 출력
 
                 cv2.waitKey(0)
