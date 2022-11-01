@@ -6,7 +6,7 @@ import exposal as E
 from PyQt5 import uic,QtWidgets
 from PyQt5.QtWidgets import  QApplication,QMainWindow,QDialog
 from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QImage, QPixmap
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen
 
 import exposal as E
 import cv2
@@ -25,6 +25,7 @@ startFormClass = uic.loadUiType(startform)[0]
 ## 셋팅 페이지 연결
 isFinished=False
 #메인 페이지 전체 클래스 = UI 연동
+sliderHeight=0
 class WindowClass(QMainWindow,mainFormClass):
     def __init__(self):
         super().__init__()
@@ -48,7 +49,8 @@ class StartClass(QMainWindow,startFormClass):
         self.actionMain.triggered.connect(self.mainReturnButtonMove)
         self.actionRun.triggered.connect(self.runThread.Run)
         # self.actionStop.triggered.connect(self.stopButton)
-        # self.btnStart.clicked.connect(self.runThread.run)
+        self.btnStart.clicked.connect(self.startProcess)
+
         self.syncComboBox()
         self.tedkVp.setAlignment(Qt.AlignCenter)
         self.tedmA.setAlignment(Qt.AlignCenter)
@@ -75,36 +77,71 @@ class StartClass(QMainWindow,startFormClass):
         for position in positions:
             self.cbPosition.addItem(position)
 
+    def startProcess(self):
+        for i in range(2):
+
+            self.labelProcess.setText('분석중.')
+            time.sleep(0.5)
+            self.labelProcess.setText('분석중..')
+            time.sleep(0.5)
+            self.labelProcess.setText('분석중...')
+            time.sleep(0.5)
+
+        expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
+        self.tedkVp.setText(str(expose['kvp']))
+        self.tedmA.setText(str(expose['ma']))
+        self.tedMsec.setText(str(expose['msec']))
+        self.tedmAs.setText(str(expose['mas']))
+        self.tedkVp.setAlignment(Qt.AlignCenter)
+        self.tedmA.setAlignment(Qt.AlignCenter)
+        self.tedMsec.setAlignment(Qt.AlignCenter)
+        self.tedmAs.setAlignment(Qt.AlignCenter)
+        self.labelProcess.setText('분석 완료!')
+
     def mainReturnButtonMove(self):
         widget.setCurrentIndex(widget.currentIndex()-1)
 
     @pyqtSlot(QImage, QImage, bool)
     def setImage(self, image,image2, isFinished):
+        sliderHeight=self.verticalSlider.value()
+        painter1=QPainter(image)
+        painter2=QPainter(image2)
+        painter1.setPen(QPen(Qt.cyan, 10, Qt.SolidLine))
+        painter2.setPen(QPen(Qt.cyan, 10, Qt.SolidLine))
+        painter2.setOpacity(0.3)
+        painter1.setOpacity(0.3)
+        painter1.drawLine(0, 492-sliderHeight, 229, 492-sliderHeight)
+        painter2.drawLine(0, 492-sliderHeight, 229, 492-sliderHeight)
         pixmap = QPixmap.fromImage(image)
+        pixmap2 = QPixmap.fromImage(image2)
         self.labelSideViewVideo.setPixmap(pixmap)
         self.labelSideViewVideo.repaint()
-        pixmap2 = QPixmap.fromImage(image2)
         self.labelFrontViewVideo.setPixmap(pixmap2)
         self.labelFrontViewVideo.repaint()
-        if isFinished:
-            expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
-            self.tedkVp.setText(str(expose['kvp']))
-            self.tedmA.setText(str(expose['ma']))
-            self.tedMsec.setText(str(expose['msec']))
-            self.tedmAs.setText(str(expose['mas']))
-            self.tedkVp.setAlignment(Qt.AlignCenter)
-            self.tedmA.setAlignment(Qt.AlignCenter)
-            self.tedMsec.setAlignment(Qt.AlignCenter)
-            self.tedmAs.setAlignment(Qt.AlignCenter)
+        # if isFinished:
+        #     expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
+        #     self.tedkVp.setText(str(expose['kvp']))
+        #     self.tedmA.setText(str(expose['ma']))
+        #     self.tedMsec.setText(str(expose['msec']))
+        #     self.tedmAs.setText(str(expose['mas']))
+        #     self.tedkVp.setAlignment(Qt.AlignCenter)
+        #     self.tedmA.setAlignment(Qt.AlignCenter)
+        #     self.tedMsec.setAlignment(Qt.AlignCenter)
+        #     self.tedmAs.setAlignment(Qt.AlignCenter)
+
+    # def setHeight(self):
+    #     self.verticalSlider.
+
 
 class runThread(QThread):
     changePixmap = pyqtSignal(QImage, QImage,bool)
-
     def Run(self):
         isFinished=False
-        #print("영상 촬영 시작")
-        cap = cv2.VideoCapture(0)
-        cap2 = cv2.VideoCapture(1)
+        print("영상 촬영 시작")
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        print('카메라 1 불러오기')
+        cap2 = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        print('카메라 2 불러오기')
         start=time.time()
         while(True):
             ret,frame = cap.read()
@@ -116,35 +153,42 @@ class runThread(QThread):
                 ws = int(w / 3)
                 we = int(w * 2 / 3)
 
-                rgbImage = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
-                rgbImage2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2RGB)
-                h, w, ch = rgbImage.shape
+                try:
+                    rgbImage = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
+                    rgbImage2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2RGB)
+                    h, w, ch = rgbImage.shape
 
-                rgbImage=rgbImage[:,ws:we,:]
-                rgbImage2=rgbImage2[:,ws:we,:]
-                bytesPerLine = int(ch * w)
-                convertToQtFormat = QImage(rgbImage[0], ws,h, bytesPerLine, QImage.Format_RGB888)
-                convertToQtFormat2 = QImage(rgbImage2[0], ws,h, bytesPerLine, QImage.Format_RGB888)
+                    rgbImage=rgbImage[:,ws:we,:]
+                    rgbImage2=rgbImage2[:,ws:we,:]
+                    bytesPerLine = int(ch * w)
+                    convertToQtFormat = QImage(rgbImage[0], ws,h, bytesPerLine, QImage.Format_RGB888)
+                    convertToQtFormat2 = QImage(rgbImage2[0], ws,h, bytesPerLine, QImage.Format_RGB888)
 
-                # bytesPerLine=ch*w
-                # convertToQtFormat=QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
+                    # bytesPerLine=ch*w
+                    # convertToQtFormat=QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
 
-                #p = convertToQtFormat.scaled(w, h, Qt.IgnoreAspectRatio)
-                # 영상 보내기
+                    #p = convertToQtFormat.scaled(w, h, Qt.IgnoreAspectRatio)
+                    # 영상 보내기
 
-                #todo 모델 리스트 전달 하는 곳 작업 들어가야함 . ( sgrmantation )
+                    #todo 모델 리스트 전달 하는 곳 작업 들어가야함 . ( segmentation )
 
-                #처리된 결과
-                if time.time()-start>3:
-                    isFinished=True
-                    start=time.time()
+                    #처리된 결과
+                    if time.time()-start>3:
+                        isFinished=True
+                        start=time.time()
 
-                #결과 값 전달.
-                #영상  , 관전압 결과 , 간전류 결과
-                self.changePixmap.emit(convertToQtFormat,convertToQtFormat2, isFinished)
+                    #결과 값 전달.
+                    #영상  , 관전압 결과 , 간전류 결과
+                    self.changePixmap.emit(convertToQtFormat,convertToQtFormat2, isFinished)
                 # 임의 결과값 출력
+                except:
+                    pass
+
 
                 cv2.waitKey(0)
+        cap.release()
+        print('릴리즈 됨')
+        cap2.release()
 
     def randomResult(self):
         return random.randrange(80,120)
@@ -166,7 +210,7 @@ if __name__ == "__main__":
     # 위제 사이즈 지정
     widget.setWindowTitle('전신영상 기반 체형 예측 후 최적의 X-ray 조건을 추천AI')
     widget.setFixedWidth(854)
-    widget.setFixedHeight(629)
+    widget.setFixedHeight(680)
     widget.show()
 
     app.exec_()
