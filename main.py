@@ -4,9 +4,9 @@ import time
 import random
 import exposal as E
 from PyQt5 import uic,QtWidgets
-from PyQt5.QtWidgets import  QApplication,QMainWindow,QDialog
-from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QWidget
+from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot, QByteArray, QSize
+from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMovie
 
 import exposal as E
 import cv2
@@ -15,7 +15,8 @@ import cv2
 def resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
-
+loadform=resource_path('UI/load.ui')
+FROM_CLASS_Loading = uic.loadUiType(loadform)[0]
 ## 메인 페이지 연결
 mainform = resource_path('UI/form_Main.ui')
 mainFormClass = uic.loadUiType(mainform)[0]
@@ -36,6 +37,45 @@ class WindowClass(QMainWindow,mainFormClass):
     def startButtonMove(self):
         widget.setCurrentIndex(widget.currentIndex()+1)
 
+
+class loading(QWidget, FROM_CLASS_Loading):
+
+    def __init__(self, parent):
+        super(loading, self).__init__(parent)
+        self.setupUi(self)
+        self.center()
+        self.cntPreset=150
+        self.show()
+
+        # 동적 이미지 추가
+        self.movie = QMovie('pngegg.png', QByteArray(), self)
+        self.movie.setScaledSize(QSize(200,200))
+        self.movie.setCacheMode(QMovie.CacheAll)
+        # QLabel에 동적 이미지 삽입
+        self.label.setMovie(self.movie)
+        self.movie.start()
+        # 윈도우 해더 숨기기
+        self.setWindowFlags(Qt.FramelessWindowHint)
+
+    # 위젯 정중앙 위치
+    def center(self):
+        size = self.size()
+        ph = self.parent().geometry().height()
+        pw = self.parent().geometry().width()
+        self.move(int(pw / 2 - size.width() / 2), int(ph / 2 - size.height() / 2))
+
+    def showEvent(self, event):
+        self.timer = self.startTimer(30)
+
+        self.counter = 0
+    def timerEvent(self, event):
+        self.counter += 1
+        self.update()
+        self.label.setText(str(self.cntPreset - self.counter))
+        if self.counter == self.cntPreset:  # 300번 호출되면
+            self.killTimer(self.timer)  # 타이머 종료하고
+        self.hide()
+
 #스타트 페이지 전체 클래스 = UI 연동
 class StartClass(QMainWindow,startFormClass):
     def __init__(self):
@@ -49,7 +89,11 @@ class StartClass(QMainWindow,startFormClass):
         self.actionMain.triggered.connect(self.mainReturnButtonMove)
         self.actionRun.triggered.connect(self.runThread.Run)
         # self.actionStop.triggered.connect(self.stopButton)
+        self.btnStart.clicked.connect(self.loading)
+
         self.btnStart.clicked.connect(self.startProcess)
+
+
 
         self.syncComboBox()
         self.tedkVp.setAlignment(Qt.AlignCenter)
@@ -66,37 +110,45 @@ class StartClass(QMainWindow,startFormClass):
         # self.cbView.get
         self.cbView.currentIndexChanged.connect(self.syncComboBox)
 
-
-    # def stopButton(self):
-    #     self.runThread.stop()
-    #     self.runThread.wait(1000)
-    #     print("중지 되었습니다.")
     def syncComboBox(self) :
         self.cbPosition.clear()
         positions=E.getPositions(self.cbView.currentText())
         for position in positions:
             self.cbPosition.addItem(position)
 
+    def loading(self):
+        try:
+            self.loading
+            self.loading.deleteLater()
+        # 처음 클릭하는 경우
+        except:
+            self.loading = loading(self)
     def startProcess(self):
-        for i in range(2):
-
-            self.labelProcess.setText('분석중.')
-            time.sleep(0.5)
-            self.labelProcess.setText('분석중..')
-            time.sleep(0.5)
-            self.labelProcess.setText('분석중...')
-            time.sleep(0.5)
+        start=time.time()
 
         expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
-        self.tedkVp.setText(str(expose['kvp']))
-        self.tedmA.setText(str(expose['ma']))
-        self.tedMsec.setText(str(expose['msec']))
-        self.tedmAs.setText(str(expose['mas']))
+        self.labelProcess.setText('분석중.')
+        self.labelProcess.repaint()
+        time.sleep(0.5)
+        self.labelProcess.setText('분석중..')
+        self.labelProcess.repaint()
+        time.sleep(0.5)
+        self.labelProcess.setText('분석중...')
+        self.labelProcess.repaint()
+        time.sleep(0.5)
+        self.tedkVp.setText(str(expose['kvp']*random.randrange(95, 105)/100))
+        ma=expose['ma']*random.randrange(95, 105)/100
+        msec=expose['msec']*random.randrange(95, 105)/100
+        self.tedmA.setText(str(ma))
+        self.tedMsec.setText(str(msec))
+        self.tedmAs.setText(str(round(ma*msec/1000, 2)))
         self.tedkVp.setAlignment(Qt.AlignCenter)
         self.tedmA.setAlignment(Qt.AlignCenter)
         self.tedMsec.setAlignment(Qt.AlignCenter)
         self.tedmAs.setAlignment(Qt.AlignCenter)
         self.labelProcess.setText('분석 완료!')
+        loading(self)
+
 
     def mainReturnButtonMove(self):
         widget.setCurrentIndex(widget.currentIndex()-1)
@@ -118,20 +170,6 @@ class StartClass(QMainWindow,startFormClass):
         self.labelSideViewVideo.repaint()
         self.labelFrontViewVideo.setPixmap(pixmap2)
         self.labelFrontViewVideo.repaint()
-        # if isFinished:
-        #     expose = E.getExposal(self.cbView.currentText(), self.cbPosition.currentText())
-        #     self.tedkVp.setText(str(expose['kvp']))
-        #     self.tedmA.setText(str(expose['ma']))
-        #     self.tedMsec.setText(str(expose['msec']))
-        #     self.tedmAs.setText(str(expose['mas']))
-        #     self.tedkVp.setAlignment(Qt.AlignCenter)
-        #     self.tedmA.setAlignment(Qt.AlignCenter)
-        #     self.tedMsec.setAlignment(Qt.AlignCenter)
-        #     self.tedmAs.setAlignment(Qt.AlignCenter)
-
-    # def setHeight(self):
-    #     self.verticalSlider.
-
 
 class runThread(QThread):
     changePixmap = pyqtSignal(QImage, QImage,bool)
@@ -190,8 +228,6 @@ class runThread(QThread):
         print('릴리즈 됨')
         cap2.release()
 
-    def randomResult(self):
-        return random.randrange(80,120)
 
 if __name__ == "__main__":
     #QApplication : 프로그램 실행 시키는 클래스
