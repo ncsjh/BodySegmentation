@@ -3,15 +3,27 @@ import os
 import time
 import random
 import exposal as E
-from PyQt5 import uic,QtWidgets
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QWidget
+from PyQt5 import uic, QtWidgets
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QWidget, QLabel
 from PyQt5.QtCore import QThread, Qt, pyqtSignal, pyqtSlot, QByteArray, QSize
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QMovie
-
-import exposal as E
+import torch
 import cv2
+import xml.etree.ElementTree as ET
 
-#path 구분자
+import torch
+import torchvision
+from torchvision import models
+import numpy as np
+
+ESC_KEY=27
+FRAME_RATE = 30
+SLEEP_TIME = 1/FRAME_RATE
+# 테스트용으로 꿀뷰를 사용해서 window_class 를 꿀뷰 클래스를 가져옴.
+
+# camera = cv2.VideoCapture(0)
+# torchvision.models.ResNet
+
 def resource_path(relative_path):
     base_path = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
@@ -75,13 +87,14 @@ class loading(QWidget, FROM_CLASS_Loading):
         if self.counter == self.cntPreset:  # 300번 호출되면
             self.killTimer(self.timer)  # 타이머 종료하고
         self.hide()
-
 #스타트 페이지 전체 클래스 = UI 연동
 class StartClass(QMainWindow,startFormClass):
+    pred=[]
+    doesCaptureStart=False
     def __init__(self):
         super(StartClass, self).__init__()
         self.setupUi(self)
-        self.runThread = runThread(self);
+        self.runThread = runThread(self)
         # Thread 연결
         self.runThread.changePixmap.connect(self.setImage)
         self.runThread.start()
@@ -90,10 +103,8 @@ class StartClass(QMainWindow,startFormClass):
         self.actionRun.triggered.connect(self.runThread.Run)
         # self.actionStop.triggered.connect(self.stopButton)
         self.btnStart.clicked.connect(self.loading)
-
         self.btnStart.clicked.connect(self.startProcess)
-
-
+        self.btnCapStart.clicked.connect(self.captureStart)
 
         self.syncComboBox()
         self.tedkVp.setAlignment(Qt.AlignCenter)
@@ -136,71 +147,154 @@ class StartClass(QMainWindow,startFormClass):
         self.labelProcess.setText('분석중...')
         self.labelProcess.repaint()
         time.sleep(0.5)
-        self.tedkVp.setText(str(expose['kvp']*random.randrange(95, 105)/100))
-        ma=expose['ma']*random.randrange(95, 105)/100
-        msec=expose['msec']*random.randrange(95, 105)/100
+
+        # xml 불러오기
+        xmlPath='./xml/Expose.xml'
+        tree=ET.parse(xmlPath)
+        root=tree.getroot()
+
+        # expose 불러오기 / 셋
+        kvp=int(expose['kvp']+2*random.randint(0,4))
+        self.tedkVp.setText(str(kvp))
+        ma=expose['ma']
+        msec=expose['msec']*random.randrange(90, 115)/100
+        mas=round(ma*msec/1000, 2)
+
+        # xml 수정 및 저장
+        root.find('kvp').text=str(kvp)
+        root.find('ma').text=str(ma)
+        root.find('msec').text=str(msec)
+        root.find('mas').text=str(mas)
+        tree.write(xmlPath)
+
+        # expose 띄우기
         self.tedmA.setText(str(ma))
         self.tedMsec.setText(str(msec))
-        self.tedmAs.setText(str(round(ma*msec/1000, 2)))
+        self.tedmAs.setText(str(mas))
         self.tedkVp.setAlignment(Qt.AlignCenter)
         self.tedmA.setAlignment(Qt.AlignCenter)
         self.tedMsec.setAlignment(Qt.AlignCenter)
         self.tedmAs.setAlignment(Qt.AlignCenter)
         self.labelProcess.setText('분석 완료!')
-        loading(self)
 
+        loading(self)
 
     def mainReturnButtonMove(self):
         widget.setCurrentIndex(widget.currentIndex()-1)
 
-    @pyqtSlot(QImage, QImage, bool)
-    def setImage(self, image,image2, isFinished):
+    def setMostImage(self, pixmap, isfront, prob):
+        if isfront:
+            if self.frontMost<prob:
+                self.frontMost=prob
+                self.labelFrontCapture.setPixmap(pixmap)
+                self.labelFrontCapture.repaint()
+                self.labelFrontProb.setText(str(prob))
+                self.labelFrontProb.repaint()
+        else:
+            if self.sideMost<prob:
+                self.sideMost=prob
+                self.labelSideCapture.setPixmap(pixmap)
+                self.labelSideCapture.repaint()
+                self.labelSideProb.setText(str(prob))
+                self.labelSideProb.repaint()
+
+
+    def captureStart(self):
+        self.doesCaptureStart=not self.doesCaptureStart
+        if self.doesCaptureStart:
+            self.btnCapStart.setText('Capt Stop')
+        else:
+            self.btnCapStart.setText('Capt Start')
+
+    frontMost = 0
+    sideMost = 0
+    @pyqtSlot(QImage, list)
+    def setImage(self, image, preds):
+        self.pred=preds
+        pred=0
+        isFront=False
         sliderHeight=self.verticalSlider.value()
         painter1=QPainter(image)
-        painter2=QPainter(image2)
         painter1.setPen(QPen(Qt.cyan, 10, Qt.SolidLine))
-        painter2.setPen(QPen(Qt.cyan, 10, Qt.SolidLine))
-        painter2.setOpacity(0.3)
         painter1.setOpacity(0.3)
         painter1.drawLine(0, 492-sliderHeight, 229, 492-sliderHeight)
-        painter2.drawLine(0, 492-sliderHeight, 229, 492-sliderHeight)
         pixmap = QPixmap.fromImage(image)
-        pixmap2 = QPixmap.fromImage(image2)
-        self.labelSideViewVideo.setPixmap(pixmap)
-        self.labelSideViewVideo.repaint()
-        self.labelFrontViewVideo.setPixmap(pixmap2)
+        if self.doesCaptureStart:
+            if preds[0]>preds[1]:
+                if preds[0]>self.frontMost:
+                    isFront=True
+                    pred=preds[0]
+            else:
+                if preds[1]>self.sideMost:
+                    isFront=False
+                    pred=preds[1]
+            self.setMostImage(pixmap, isFront, pred)
+        self.labelFrontViewVideo.setPixmap(pixmap)
+        self.labelProb.setText(f'Front Prob : {preds[0]}, Side Prob : {preds[1]}')
+        # lblPred=QLabel(f'Front Prob : {preds[0]}, Side Prob : {preds[1]}')
+
         self.labelFrontViewVideo.repaint()
 
 class runThread(QThread):
-    changePixmap = pyqtSignal(QImage, QImage,bool)
+    changePixmap = pyqtSignal(QImage, list)
     def Run(self):
-        isFinished=False
-        print("영상 촬영 시작")
+        device = torch.device('cuda:0')
+
+        os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+        HERE = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(HERE, 'FrontSideModel.model')
+
+        checkpoint = torch.load(model_path)
+        model = models.resnet50(num_classes=2)
+        model.load_state_dict(checkpoint, strict=False)
+        model.to(device)
+        sideScore = 0
+        frontScore = 0
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-        print('카메라 1 불러오기')
-        cap2 = cv2.VideoCapture(1, cv2.CAP_DSHOW)
-        print('카메라 2 불러오기')
+
         start=time.time()
         while(True):
             ret,frame = cap.read()
-            ret2,frame2=cap2.read()
-            if time.time() - start<3:
-                isFinished=False
+            isMost=False
+            isFront=False
             if ret:
                 h, w, ch=frame.shape
                 ws = int(w / 3)
                 we = int(w * 2 / 3)
 
                 try:
+                    roi=cv2.resize(frame,(224,224))
                     rgbImage = cv2.cvtColor(frame,cv2.COLOR_BGR2RGB)
-                    rgbImage2 = cv2.cvtColor(frame2,cv2.COLOR_BGR2RGB)
                     h, w, ch = rgbImage.shape
+                    roi = roi.astype("float") / 53
+
+                    tf_toTensor = torchvision.transforms.ToTensor()
+                    roi = tf_toTensor(roi)
+
+                    roi = roi.unsqueeze(0)
+                    roi = roi.to(device, dtype=torch.float)
+
+                    model.eval()
+                    with torch.no_grad():
+                        preds = model(roi)
+
+                        preds=preds.cpu().numpy()[0]
+                        total=0
+                        tr_pred=[]
+                        for pred in preds:
+                            total=total+np.exp(pred)
+                        for pred in preds:
+                            tr_pred.append(round(np.exp(pred)/total*100, 2))
+
+                        print('\r', f'연산값 : {tr_pred}', end='')
 
                     rgbImage=rgbImage[:,ws:we,:]
-                    rgbImage2=rgbImage2[:,ws:we,:]
+
+                    # rgbImage2=rgbImage2[:,ws:we,:]
                     bytesPerLine = int(ch * w)
                     convertToQtFormat = QImage(rgbImage[0], ws,h, bytesPerLine, QImage.Format_RGB888)
-                    convertToQtFormat2 = QImage(rgbImage2[0], ws,h, bytesPerLine, QImage.Format_RGB888)
+                    # convertToQtFormat2 = QImage(rgbImage2[0], ws,h, bytesPerLine, QImage.Format_RGB888)
 
                     # bytesPerLine=ch*w
                     # convertToQtFormat=QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format_RGB888)
@@ -209,15 +303,11 @@ class runThread(QThread):
                     # 영상 보내기
 
                     #todo 모델 리스트 전달 하는 곳 작업 들어가야함 . ( segmentation )
-
                     #처리된 결과
                     if time.time()-start>3:
-                        isFinished=True
                         start=time.time()
 
-                    #결과 값 전달.
-                    #영상  , 관전압 결과 , 간전류 결과
-                    self.changePixmap.emit(convertToQtFormat,convertToQtFormat2, isFinished)
+                    self.changePixmap.emit(convertToQtFormat, tr_pred)
                 # 임의 결과값 출력
                 except:
                     pass
@@ -244,8 +334,8 @@ if __name__ == "__main__":
     widget.addWidget(StartWindow)
     # 프로그램 화면 보이는 코드
     # 위제 사이즈 지정
-    widget.setWindowTitle('전신영상 기반 체형 예측 후 최적의 X-ray 조건을 추천AI')
-    widget.setFixedWidth(854)
+    widget.setWindowTitle('X-ray 적정선량 추천AI')
+    widget.setFixedWidth(1150)
     widget.setFixedHeight(680)
     widget.show()
 
